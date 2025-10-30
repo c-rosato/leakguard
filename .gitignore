@@ -1,0 +1,23 @@
+# Dart generated files
+.dart_tool/
+.packages
+.pub/
+build/
+
+# Logs
+*.log
+
+# IDE / Editor
+.idea/
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Backup / temporários
+*.bak
+*.tmp
+
+# Arquivos confidenciais
+*.env
