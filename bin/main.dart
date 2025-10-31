@@ -11,7 +11,7 @@ import 'package:leakguard_mq2/models/firebase_leitura.dart';
 /// - Conecta ao Realtime Database
 /// - Escuta as leituras do sensor MQ-2 em tempo real
 /// - Exibe as leituras no console
-/// - Permite encerrar manualmente digitando "sair"
+/// - Permite encerrar manualmente digitando "sair" - TESTE
 void main() async {
   // Cria e carrega dotenv
   final dotenv = DotEnv();
