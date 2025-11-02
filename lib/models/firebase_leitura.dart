@@ -1,9 +1,18 @@
-/// Classe modelo que representa a leitura de um sensor MQ-2 registrada no Firebase Realtime Database.
+/// ===============================================================
+/// FirebaseLeitura - Modelo de dados do sensor MQ-2
+///
+/// Função principal:
+/// Representar uma leitura armazenada no Firebase Realtime Database,
+/// refletindo o estado atual do sensor MQ-2.
+///
 /// Cada leitura contém:
-/// - sensorAtivo: se o sensor está ligado ou não
-/// - dataHoraLeitura: momento da leitura
-/// - gasDetectado: se foi detectado gás
-/// - nivelGasPPM: nível atual do gás detectado
+/// - ativo (bool): se o sensor está ligado
+/// - dataHora (String, ISO8601): momento da leitura
+/// - foiDetectado (bool): se foi detectado gás
+/// - nivelGas (double): nível de gás em PPM
+///
+/// Este modelo é usado para conversão JSON → Objeto Dart.
+/// ===============================================================
 class FirebaseLeitura {
   final bool sensorAtivo;
   final String dataHoraLeitura;
@@ -17,7 +26,9 @@ class FirebaseLeitura {
     required this.nivelGasPPM,
   });
 
-  /// Construtor de fábrica que cria uma instância a partir de um mapa JSON vindo do Firebase.
+  // === 1. Cria instância a partir de JSON retornado pelo Firebase ===
+  //
+  // Faz tratamento de tipo para valores vindos como int ou bool.
   factory FirebaseLeitura.fromJson(Map<String, dynamic> json) {
     return FirebaseLeitura(
       sensorAtivo: json['ativo'] is bool ? json['ativo'] : json['ativo'] == 1,
@@ -29,12 +40,15 @@ class FirebaseLeitura {
     );
   }
 
-  /// Retorna uma string formatada para exibir no console.
+  // === 2. Retorna representação legível para o console ===
+  //
+  // Formato:
+  // Ativo: Sim | Detectado: Não | Nível: 145.32 ppm | Data/Hora: 2025-11-02T21:40:00
   @override
   String toString() {
     return 'Ativo: ${sensorAtivo ? "Sim" : "Não"} | '
-           'Detectado: ${gasDetectado ? "Sim" : "Não"} | '
-           'Nível: ${nivelGasPPM.toStringAsFixed(2)} | '
-           'Data/Hora: $dataHoraLeitura';
+        'Detectado: ${gasDetectado ? "Sim" : "Não"} | '
+        'Nível: ${nivelGasPPM.toStringAsFixed(2)} ppm | '
+        'Data/Hora: $dataHoraLeitura';
   }
 }
