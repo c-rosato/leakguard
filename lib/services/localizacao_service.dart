@@ -4,11 +4,14 @@ import 'package:leakguard_mq2/models/localizacao.dart';
 /// ===============================================================
 /// LocalizacaoService - Regras simples para `localizacao`
 ///
-/// Reponsabilidades:
-/// - Servir como "ponte" entre o console/menu e o [LocalizacaoDao].
-/// - Listar localizacoes ja cadastradas (para exibicao ou escolha).
-/// - Criar novas entradas com um unico metodo simples.
-/// - Garantir que exista uma localizacao padrao (ID=1) antes do seed do dispositivo.
+/// O que faz:
+/// - Orquestra listagem/criacao/seed de localizacoes.
+///
+/// Como faz:
+/// - Encapsula chamadas ao [LocalizacaoDao] e mapeia resultados para modelos.
+///
+/// Por que assim:
+/// - Manter o `main.dart` simples e a regra de seed centralizada aqui.
 /// ===============================================================
 class LocalizacaoService {
   final LocalizacaoDao localizacaoDao;
@@ -17,6 +20,9 @@ class LocalizacaoService {
   LocalizacaoService({required this.localizacaoDao});
 
   // === 2. Lista localizacoes ordenadas pelo nome ===
+  // O que: devolve todas as localizacoes para exibicao/selecionar.
+  // Como: SELECT direto; converte linhas em [Localizacao].
+  // Por que: oferecer dados para menus e validacoes simples.
   Future<List<Localizacao>> listarLocalizacoes() async {
     final conn = await localizacaoDao.dbService.openConnection();
 
@@ -38,20 +44,17 @@ class LocalizacaoService {
   }
 
   // === 3. Cria uma nova localizacao ===
-  //
-  // Apenas delega a chamada para o DAO. Manter esta camada permite
-  // evoluir regras simples no futuro (ex.: validar campos) sem alterar o menu.
+  // O que: insere uma localizacao.
+  // Como: delega para [LocalizacaoDao.inserir].
+  // Por que: centralizar possiveis validacoes futuras.
   Future<int> criarLocalizacao(Localizacao localizacao) async {
     return await localizacaoDao.inserir(localizacao);
   }
 
   // === 4. Garante localizacao padrao e retorna o ID ===
-  //
-  // Estrategia:
-  // 1. Reutiliza qualquer localizacao existente com o nome padrao
-  //    (isso evita re-inserir quando o banco ja possui o valor).
-  // 2. Caso nao exista, delega ao DAO um seed com ID fixo usando
-  //    INSERT ... ON DUPLICATE KEY UPDATE (mantem idempotencia).
+  // O que: assegura que a localizacao padrao exista (ID fixo = 1).
+  // Como: tenta reutilizar por nome; se nao houver, chama [LocalizacaoDao.seedPadrao].
+  // Por que: para que dispositivos e leituras possam referenciar um ID conhecido.
   Future<int> seedLocalizacaoPadrao() async {
     const nomePadrao = 'Laboratorio Geral';
     const descricaoPadrao = 'Localizacao padrao do dispositivo';

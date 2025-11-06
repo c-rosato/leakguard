@@ -5,13 +5,20 @@ import 'package:leakguard_mq2/models/alerta.dart';
 /// ===============================================================
 /// AlertaDao - Operacoes de persistencia em `alerta`
 ///
-/// O que esta classe faz:
-/// - Recebe uma instancia de [DbService] para abrir conexoes MySQL.
-/// - Insere alertas gerados pelo [AlertaService].
-/// - Devolve o ID criado para eventuais referencias futuras.
+/// O que faz:
+/// - Persiste alertas gerados a partir de leituras acima do limiar.
+/// - Retorna o ID do alerta inserido.
 ///
-/// Observacao:
-/// - A coluna `dataHora` possui default CURRENT_TIMESTAMP, portanto nao enviamos esse campo.
+/// Como faz:
+/// - Abre conexao via [DbService.openConnection].
+/// - Executa INSERT direto em `alerta` (sem `dataHora`, que usa CURRENT_TIMESTAMP).
+/// - Recupera o ID por `LAST_INSERT_ID()` com fallback simples.
+///
+/// Por que assim:
+/// - Mantem a camada de acesso a dados simples e didatica, sem frameworks.
+///
+/// Quem usa:
+/// - [AlertaService.avaliarERegistrar] constroi o modelo e chama [inserir].
 /// ===============================================================
 class AlertaDao {
   final DbService dbService;
@@ -21,12 +28,9 @@ class AlertaDao {
   AlertaDao(this.dbService);
 
   // === 2. Insere alerta e retorna o ID gerado ===
-  //
-  // Passos:
-  // 1. Abre conexao.
-  // 2. Escapa mensagem simples.
-  // 3. Executa INSERT na tabela `alerta`.
-  // 4. Busca o ultimo ID com `_obterUltimoId`.
+  // O que: grava um alerta relacionado a uma leitura especifica.
+  // Como: abre conexao (DbService), executa INSERT e recupera ID.
+  // Por que: disponibilizar o ID para referenciar em outras operacoes.
   Future<int> inserir(Alerta alerta) async {
     final MySqlConnection conn = await dbService.openConnection();
 

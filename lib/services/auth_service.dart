@@ -14,6 +14,16 @@ import 'package:dotenv/dotenv.dart';
 /// O token expira após um período, e deve ser renovado ao reiniciar
 /// o console. A API Key é obtida a partir do arquivo `.env`.
 /// ===============================================================
+/// AuthService - Autenticacao anonima (descricao adicional)
+///
+/// O que faz:
+/// - Retorna idToken para autorizar acessos ao Firebase Realtime Database.
+///
+/// Como faz:
+/// - Faz POST no endpoint Identity Toolkit `accounts:signUp` usando API Key do `.env`.
+///
+/// Por que assim:
+/// - Mantem o console simples sem fluxo de login de usuario.
 class AuthService {
   final DotEnv dotenv;
 
@@ -30,6 +40,9 @@ class AuthService {
   // Retorna:
   // - idToken (String): Token JWT usado nas requisições REST do Realtime Database
   // - null: Caso a autenticação falhe
+  // O que: solicita token JWT anonimo.
+  // Como: envia POST e extrai `idToken` do corpo JSON quando 200 OK.
+  // Por que: necessario para compor URLs com `?auth=...` no Firebase.
   Future<String?> autenticarAnonimamente() async {
     final url = Uri.parse(
       'https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=$apiKey',

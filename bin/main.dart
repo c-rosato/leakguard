@@ -21,7 +21,7 @@ import 'package:leakguard_mq2/daos/localizacao_dao.dart';
 /// Funcoes principais (ordem cronologica):
 /// 1. Carregar configuracoes (.env) e autenticar no Firebase via [AuthService].
 /// 2. Montar infraestrutura de banco (DbService + DAOs) e instanciar os services.
-/// 3. Semear localizacao padrao e dispositivo (1:1) garantindo integridade da FK.
+/// 3. Semear a localizacao padrao e garantir (sob demanda) os dispositivos que chegarem.
 /// 4. Ler snapshot inicial do Firebase para exibir o estado atual ao usuario.
 /// 5. Iniciar o polling continuo (listenToSensorData) para processar novas leituras.
 /// 6. Sincronizar o status `ativo` do dispositivo e armazenar leituras/alertas quando
@@ -30,16 +30,37 @@ import 'package:leakguard_mq2/daos/localizacao_dao.dart';
 ///
 /// Observacao:
 /// - Toda configuracao acontece em ordem: carrega env -> autentica -> instancia
-///   DB -> semeia localizacao -> semeia dispositivo -> inicia leituras.
+///   DB -> semeia localizacao -> processa leituras (sementes de dispositivos sao feitas sob demanda).
 /// ===============================================================
+/// main - Orquestra o fluxo do console
+///
+/// O que faz:
+/// - Inicializa configuracoes, autentica no Firebase e instancia servicos.
+/// - Semeia `localizacao` padrao e garante `dispositivo` existente.
+/// - Le snapshot inicial e inicia polling continuo do Firebase.
+/// - Aplica regras simples: sincroniza `ativo`, persiste leitura quando
+///   houve transicao `false -> true` e avalia alerta.
+///
+/// Como faz:
+/// - Usa [AuthService.autenticarAnonimamente] para obter token.
+/// - Usa [FirebaseService.getCurrentSensorData] e [FirebaseService.listenToSensorData]
+///   para ler dados.
+/// - Chama [LocalizacaoService.seedLocalizacaoPadrao] e
+///   [DispositivoService.seedDispositivo]/[DispositivoService.sincronizarAtivo].
+/// - Converte/insere via [LeituraService.processarLeitura] e avalia com
+///   [AlertaService.avaliarERegistrar].
 void main() async {
   // === 1. Carrega variaveis de ambiente ===
-  // DotEnv le o arquivo .env (na pasta bin/) e deixa chaves acessiveis via [].
+  // O que: carrega chaves do arquivo `.env`.
+  // Como: [DotEnv.load] torna valores acessiveis via `dotenv['CHAVE']`.
+  // Por que: centralizar credenciais/URLs sem hardcode.
   final dotenv = DotEnv();
   dotenv.load();
 
   // === 2. Autenticacao anonima no Firebase ===
-  // AuthService usa FIREBASE_API_KEY para obter um idToken temporario.
+  // O que: obter `idToken` para autorizar leitura do Realtime Database.
+  // Como: [AuthService.autenticarAnonimamente] usando `FIREBASE_API_KEY` do .env.
+  // Por que: compor URLs com `?auth=token` no [FirebaseService].
   final auth = AuthService(dotenv);
   print('Autenticando no Firebase...');
   final token = await auth.autenticarAnonimamente();
@@ -50,18 +71,22 @@ void main() async {
   }
   print('Autenticado com sucesso!');
 
-  // === 3. Inicializa o servico de comunicacao com o Firebase ===
-  // FirebaseService encapsula o polling HTTP (Realtime Database REST API).
+  // === 3. Inicializa FirebaseService ===
+  // O que: cliente REST do Realtime Database.
+  // Como: instancia [FirebaseService] com `baseUrl` e `authToken`.
+  // Por que: ler snapshot inicial e iniciar polling.
   final firebase = FirebaseService(
     baseUrl: dotenv['FIREBASE_BASE_URL'] ?? '',
     authToken: token,
   );
 
-  // === 3.1. Inicializa DB/DAOs/Services e faz seed do dispositivo ===
-  // Etapas de infraestrutura:
-  // - DbService: leitura de host/porta/usuario/senha do .env e abre conexoes on-demand.
-  // - DAOs: recebem DbService e executam SQLs especificos (leitura/alerta/dispositivo/localizacao).
-  // - Services: encapsulam a "regra didatica" do projeto (ex.: conversao da leitura).
+  // === 3.1. Inicializa DB/DAOs/Services ===
+  // O que: montar infraestrutura de banco e regras.
+  // Como: 
+  // - [DbService.openConnection] sera usado pelos DAOs.
+  // - DAOs: [LeituraGasDao], [AlertaDao], [DispositivoDao], [LocalizacaoDao].
+  // - Services: [LeituraService], [AlertaService], [DispositivoService], [LocalizacaoService].
+  // Por que: separar acesso a dados (DAO) das regras (Service).
   final dbService = DbService(dotenv);
   final leituraGasDao = LeituraGasDao(dbService);
   final alertaDao = AlertaDao(dbService);
@@ -69,34 +94,39 @@ void main() async {
   final localizacaoDao = LocalizacaoDao(dbService);
 
   final leituraService = LeituraService(
-    dotenv: dotenv,
     leituraGasDao: leituraGasDao,
   );
   final alertaService = AlertaService(alertaDao: alertaDao);
   final dispositivoService = DispositivoService(
-    dotenv: dotenv,
     dispositivoDao: dispositivoDao,
   );
   final localizacaoService = LocalizacaoService(
     localizacaoDao: localizacaoDao,
   );
 
-  // Semear localizacao padrao antes do dispositivo (garante FK disponivel)
-  // LocalizacaoService.seedLocalizacaoPadrao -> LocalizacaoDao.seedPadrao (ID fixo = 1).
-  // Em seguida DispositivoService.seedDispositivo vincula o dispositivo 1 nessa localizacao.
+  // === Seed de localizacao padrao ===
+  // O que: garantir localizacao ID=1 disponivel para FKs.
+  // Como: [LocalizacaoService.seedLocalizacaoPadrao] -> [LocalizacaoDao.seedPadrao].
+  // Por que: dispositivo/leituras referenciam essa FK quando necessario.
   final idLocalizacaoPadrao =
       await localizacaoService.seedLocalizacaoPadrao();
-  await dispositivoService.seedDispositivo(
-    idLocalizacaoPadrao: idLocalizacaoPadrao,
-  );
 
-  // === 4. Faz a leitura inicial (snapshot atual do no /mq2) ===
-  // Objetivos:
-  // - Mostrar no console a ultima leitura existente (caso haja).
-  // - Sincronizar imediatamente o campo `ativo` do dispositivo no MySQL.
+  // === 4. Snapshot inicial do Firebase ===
+  // O que: obter estado atual do sensor.
+  // Como: [FirebaseService.getCurrentSensorData] e, se houver dado:
+  //   - [DispositivoService.seedDispositivo] com `idLocalizacaoPadrao`.
+  //   - [DispositivoService.sincronizarAtivo] com base no snapshot.
+  // Por que: exibir status e alinhar `ativo` no MySQL.
   final leituraAtual = await firebase.getCurrentSensorData();
   if (leituraAtual != null) {
-    await dispositivoService.sincronizarAtivo(leituraAtual);
+    await dispositivoService.seedDispositivo(
+      idDispositivo: leituraAtual.idDispositivo,
+      idLocalizacaoPadrao: idLocalizacaoPadrao,
+    );
+    await dispositivoService.sincronizarAtivo(
+      idDispositivo: leituraAtual.idDispositivo,
+      leituraFirebase: leituraAtual,
+    );
 
     if (leituraAtual.gasDetectado) {
       print('Ultima leitura do sensor (detecao de gas): $leituraAtual');
@@ -108,15 +138,21 @@ void main() async {
     print('Nenhum dado encontrado no Firebase (no /mq2 vazio).');
   }
 
-  // === 5. Inicia o loop de escuta (polling continuo) ===
-  // A partir daqui o console fica "escutando" de segundo plano ate o usuario encerrar.
+  // === 5. Loop de escuta (polling) ===
+  // O que: acompanhar mudancas relevantes do sensor.
+  // Como: [FirebaseService.listenToSensorData] (3s).
+  //   - A cada leitura: seed do dispositivo e sincronizar `ativo`.
+  //   - Em transicao `false -> true`: [LeituraService.processarLeitura]
+  //     e [AlertaService.avaliarERegistrar].
+  // Por que: gravar leituras somente na deteccao.
   print('Escutando leituras do sensor MQ-2 (polling a cada 3 segundos)...\n');
 
   FirebaseLeitura? ultimaLeituraProcessada;
 
-  // A stream a seguir roda em paralelo, emitindo leituras novas conforme regras:
-  // - Cada ciclo sincroniza status do dispositivo (ativo/inativo).
-  // - So grava no MySQL quando ocorre a transicao `false -> true` (detecao de gas).
+  // Detalhe do processamento da stream:
+  // O que: sincroniza `ativo` e persiste leitura apenas em `false -> true`.
+  // Como: calcula `detectouAgora` comparando com `ultimaLeituraProcessada`.
+  // Por que: atender a regra didatica do projeto.
   late StreamSubscription<FirebaseLeitura?> subscription;
   subscription = firebase.listenToSensorData(path: '/mq2').listen(
     (leitura) async {
@@ -125,7 +161,14 @@ void main() async {
       }
 
       try {
-        await dispositivoService.sincronizarAtivo(leitura);
+        await dispositivoService.seedDispositivo(
+          idDispositivo: leitura.idDispositivo,
+          idLocalizacaoPadrao: idLocalizacaoPadrao,
+        );
+        await dispositivoService.sincronizarAtivo(
+          idDispositivo: leitura.idDispositivo,
+          leituraFirebase: leitura,
+        );
 
         if (ultimaLeituraProcessada == null) {
           ultimaLeituraProcessada = leitura;
@@ -154,9 +197,10 @@ void main() async {
     cancelOnError: false,
   );
 
-  // === 6. Escuta input do usuario sem bloquear o loop principal ===
-  // Permite encerrar o programa digitando "sair" no console.
-  // stdinSubscription fica responsavel por comandos de usuario (simples e nao bloqueante).
+  // === 6. Input do usuario ===
+  // O que: permitir encerrar o console digitando 'sair'.
+  // Como: stream de stdin (decoder + LineSplitter); cancela streams e `exit(0)`.
+  // Por que: finalizar o processo manualmente sem bloquear o loop.
   late StreamSubscription<String> stdinSubscription;
   stdinSubscription = stdin
       .transform(utf8.decoder)
@@ -170,6 +214,9 @@ void main() async {
     }
   });
 
-  // === 7. Mantem o programa ativo "em espera" (nao finaliza o processo) ===
+  // === 7. Mantem o processo ativo ===
+  // O que: impedir encerramento imediato.
+  // Como: `Future.delayed` prolongado mantendo o event loop vivo.
+  // Por que: console segue rodando ate o usuario encerrar.
   await Future.delayed(const Duration(days: 1));
 }

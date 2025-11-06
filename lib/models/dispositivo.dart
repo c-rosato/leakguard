@@ -1,9 +1,14 @@
 /// ===============================================================
 /// Dispositivo - Modelo da tabela `dispositivo`
 ///
-/// Funcao principal:
-/// - Representar uma linha da tabela `dispositivo` do MySQL.
-/// - Modelo "burro": apenas campos e construtor.
+/// O que faz:
+/// - Representa um dispositivo cadastrado no MySQL.
+///
+/// Como faz:
+/// - Modelo "burro": somente dados para trafegar entre DAO/Service.
+///
+/// Por que assim:
+/// - Manter responsabilidades separadas e codigo simples.
 ///
 /// Campos:
 /// - id (int?)

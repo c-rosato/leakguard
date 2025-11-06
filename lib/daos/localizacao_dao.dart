@@ -5,15 +5,20 @@ import 'package:leakguard_mq2/models/localizacao.dart';
 /// ===============================================================
 /// LocalizacaoDao - Operacoes de persistencia em `localizacao`
 ///
-/// Como este DAO colabora com o projeto:
-/// - Recebe uma instancia compartilhada de [DbService] e abre conexoes MySQL
-///   apenas quando precisa executar uma query.
-/// - Oferece operacoes simples de escrita:
-///   * `inserir()` para criar novas localizacoes (usado pelo menu no futuro).
-///   * `seedPadrao()` para garantir uma localizacao com ID fixo (utilizada
-///     pelo dispositivo padrao).
-/// - Fornece utilitarios privados para recuperar o ultimo ID gerado e
-///   converter valores vindos do driver `mysql1`.
+/// O que faz:
+/// - Cria localizacoes e garante a existencia de uma localizacao padrao.
+///
+/// Como faz:
+/// - Abre conexoes sob demanda via [DbService.openConnection].
+/// - Executa INSERT simples (com escape basico) e seed idempotente com
+///   `INSERT ... ON DUPLICATE KEY`.
+/// - Recupera IDs com `LAST_INSERT_ID()` + fallback.
+///
+/// Por que assim:
+/// - Manter a camada de dados direta e clara para o projeto didatico.
+///
+/// Quem usa:
+/// - [LocalizacaoService] delega criacao e seed para este DAO.
 /// ===============================================================
 class LocalizacaoDao {
   final DbService dbService;
@@ -25,12 +30,9 @@ class LocalizacaoDao {
   LocalizacaoDao(this.dbService);
 
   // === 2. Insere localizacao e retorna o ID ===
-  //
-  // Passos executados:
-  // 1. Abre uma conexao MySQL (a cada chamada, mantendo o design simples).
-  // 2. Escapa o texto manualmente para evitar problemas com apostrofos.
-  // 3. Executa o INSERT puro na tabela `localizacao`.
-  // 4. Chama `_obterUltimoId` para saber qual ID foi gerado.
+  // O que: cria um novo registro em `localizacao`.
+  // Como: abre conexao (DbService), escapa campos e executa INSERT.
+  // Por que: disponibilizar o ID para uso imediato em relacionamentos.
   Future<int> inserir(Localizacao localizacao) async {
     final conn = await dbService.openConnection();
 
@@ -51,12 +53,10 @@ class LocalizacaoDao {
   }
 
   // === 3. Seed padrao com ID conhecido ===
-  //
-  // Este metodo espelha o seed do dispositivo:
-  // - Recebe um ID fixo (normalmente 1) e os valores padrao.
-  // - Usa `INSERT ... ON DUPLICATE KEY UPDATE` para garantir que apenas
-  //   uma linha exista com aquele ID, reaproveitando o registro se ja estiver criado.
-  // - Retorna o proprio ID informado, para o service continuar usando a mesma chave.
+  // O que: cria/atualiza a localizacao padrao com ID estavel (ex.: 1).
+  // Como: `INSERT ... ON DUPLICATE KEY UPDATE` para garantir idempotencia.
+  // Por que: outras tabelas dependem da existencia desta FK.
+  // Quem usa: [LocalizacaoService.seedLocalizacaoPadrao].
   Future<int> seedPadrao({
     required int idLocalizacao,
     required String nomePadrao,

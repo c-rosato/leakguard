@@ -6,16 +6,20 @@ import 'package:leakguard_mq2/models/firebase_leitura.dart';
 /// ===============================================================
 /// FirebaseService - Comunicacao com o Realtime Database
 ///
-/// O que esta classe faz:
-/// - Recebe a `baseUrl` do Firebase e o `authToken` gerado no AuthService.
-/// - Utiliza o `package:http` para montar e enviar requisicoes REST.
-/// - Converte as respostas em objetos [FirebaseLeitura] para o restante do sistema.
-/// - Mantem um loop de polling simples que simula uma stream continua.
+/// O que faz:
+/// - Consulta o Firebase Realtime Database e entrega [FirebaseLeitura] ao app.
+/// - Fornece leitura unica e uma stream com polling simples.
 ///
-/// Porque existe:
-/// Sem WebSocket, o console precisa consultar o Firebase a cada 3 segundos
-/// e decidir quando repassar a leitura (detectou gas, mudou o estado do
-/// dispositivo ou e a primeira leitura).
+/// Como faz:
+/// - Usa `package:http` para GET no endpoint `{baseUrl}{path}.json?auth={token}`.
+/// - Converte JSON em [FirebaseLeitura] via `FirebaseLeitura.fromJson`.
+/// - Na stream, aplica regras para evitar emitir eventos redundantes.
+///
+/// Por que assim:
+/// - Mantem a aplicacao console sem sockets, com logica clara e didatica.
+///
+/// Quem usa:
+/// - `bin/main.dart` para obter snapshot inicial e consumir a stream de leituras.
 /// ===============================================================
 class FirebaseService {
   final String baseUrl;
@@ -27,12 +31,9 @@ class FirebaseService {
   });
 
   // === 1. Busca o estado atual do sensor uma unica vez ===
-  //
-  // Como funciona:
-  // - Monta a URL (base + caminho + token).
-  // - Faz um GET simples usando http.get.
-  // - Se houver dados, converte para [FirebaseLeitura] chamando o factory.
-  // - Erros sao tratados com mensagens no console (sem excecoes propagadas).
+  // O que: retorna a leitura atual (ou null) do caminho informado.
+  // Como: GET simples, parse JSON e factory [FirebaseLeitura.fromJson].
+  // Por que: exibir snapshot inicial e sincronizar status do dispositivo.
   Future<FirebaseLeitura?> getCurrentSensorData({String path = '/mq2'}) async {
     final url = Uri.parse('$baseUrl$path.json?auth=$authToken');
 
@@ -55,14 +56,11 @@ class FirebaseService {
   }
 
   // === 2. Stream com polling continuo (a cada 3 segundos) ===
-  //
-  // Como funciona:
-  // - Repete GETs a cada 3 segundos analisando a resposta JSON.
-  // - Converte o resultado em [FirebaseLeitura].
-  // - Emite a mesma leitura somente quando houver motivo (deteccao, mudanca
-  //   do status `sensorAtivo` ou primeira rodada).
-  // - Essa stream e consumida diretamente no main.dart para alimentar
-  //   os servicos de dispositivo, leitura e alerta.
+  // O que: emite leituras quando houver razao relevante.
+  // Como: GET periodico; emite se detectou gas, mudou `sensorAtivo`,
+  //        houve redefinicao ou e a primeira iteracao.
+  // Por que: reduzir ruido no processamento do `main.dart`.
+  // Quem usa: `bin/main.dart` para alimentar Dispositivo/Leitura/Alerta services.
   Stream<FirebaseLeitura?> listenToSensorData({String path = '/mq2'}) async* {
     final url = Uri.parse('$baseUrl$path.json?auth=$authToken');
 

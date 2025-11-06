@@ -1,72 +1,64 @@
-import 'package:dotenv/dotenv.dart';
 import 'package:leakguard_mq2/daos/dispositivo_dao.dart';
 import 'package:leakguard_mq2/models/firebase_leitura.dart';
 
 /// ===============================================================
 /// DispositivoService - Regras simples do dispositivo
 ///
-/// O que esta classe faz:
-/// - Recebe a instancia de [DotEnv] (para descobrir o DEVICE_ID) e
-///   instancia de [DispositivoDao] (responsavel pelo MySQL).
-/// - Garante que o dispositivo unico (ESP32 MQ-2) sempre exista no banco.
-/// - Mantem o campo `ativo` sincronizado com a leitura do Firebase.
-/// - Atualiza a chave estrangeira `id_localizacao` quando necessario.
+/// O que faz:
+/// - Garante existencia do dispositivo, sincroniza `ativo` e gerencia a FK de localizacao.
 ///
-/// Observacao:
-/// - O projeto possui apenas 1 dispositivo. O ID vem do .env (DEVICE_ID),
-///   padrao 1 se nao definido. Todas as operacoes usam esse ID fixo.
+/// Como faz:
+/// - Encapsula chamadas ao [DispositivoDao] para seed, update de `ativo` e `id_localizacao`.
+///
+/// Por que assim:
+/// - Centraliza regras simples, deixa o DAO focado no SQL e o `main.dart` limpo.
 /// ===============================================================
 class DispositivoService {
-  final DotEnv dotenv;
   final DispositivoDao dispositivoDao;
 
   // === 1. Construtor ===
-  //
-  // Recebe:
-  // - [DotEnv] carregado no main (ja com as variaveis do arquivo .env).
-  // - [DispositivoDao] instanciado no main com o mesmo DbService.
-  DispositivoService({required this.dotenv, required this.dispositivoDao});
+  DispositivoService({required this.dispositivoDao});
 
   // === 2. Garante o dispositivo no banco (seed) ===
-  //
-  // Como funciona:
-  // - Lê o DEVICE_ID do .env (ou assume 1).
-  // - Invoca `DispositivoDao.seedSeNecessario`, que faz o INSERT com
-  //   ON DUPLICATE KEY UPDATE, incluindo a localizacao padrão.
-  // - Usado logo no start do main para garantir dados mínimos.
-  Future<void> seedDispositivo({int? idLocalizacaoPadrao}) async {
-    final deviceId = int.tryParse(dotenv['DEVICE_ID'] ?? '1') ?? 1;
+  // O que: cria se nao existir, sem duplicar.
+  // Como: delega para [DispositivoDao.seedSeNecessario].
+  // Por que: permitir loop idempotente no inicio e a cada leitura.
+  Future<void> seedDispositivo({
+    required int idDispositivo,
+    int? idLocalizacaoPadrao,
+    String nomePadrao = 'ESP32 MQ-2',
+  }) async {
     await dispositivoDao.seedSeNecessario(
-      idDispositivo: deviceId,
+      idDispositivo: idDispositivo,
+      nomePadrao: nomePadrao,
       idLocalizacao: idLocalizacaoPadrao,
     );
   }
 
   // === 3. Atualiza o campo `ativo` conforme Firebase ===
-  //
-  // Como funciona:
-  // - Recebe a ultima [FirebaseLeitura] do polling.
-  // - Extrai o DEVICE_ID.
-  // - Chama `DispositivoDao.atualizarAtivo` para refletir o status no MySQL.
-  // - Rodado em cada iteracao da stream, independente de deteccao de gas.
-  Future<void> sincronizarAtivo(FirebaseLeitura leituraFirebase) async {
-    final deviceId = int.tryParse(dotenv['DEVICE_ID'] ?? '1') ?? 1;
+  // O que: reflete se o sensor esta operacional ou nao.
+  // Como: [DispositivoDao.atualizarAtivo] com valor vindo do Firebase.
+  // Por que: permitir auditoria/BI do status do equipamento.
+  Future<void> sincronizarAtivo({
+    required int idDispositivo,
+    required FirebaseLeitura leituraFirebase,
+  }) async {
     await dispositivoDao.atualizarAtivo(
-      idDispositivo: deviceId,
+      idDispositivo: idDispositivo,
       ativo: leituraFirebase.sensorAtivo,
     );
   }
 
   // === 4. Vincula o dispositivo a uma localizacao ===
-  //
-  // Como funciona:
-  // - Recebe o ID de uma localizacao (ou null se quiser remover).
-  // - Usa o mesmo DEVICE_ID e repassa para `DispositivoDao.atualizarLocalizacao`.
-  // - Esse metodo e usado tanto na semente inicial quanto no menu futuro.
-  Future<void> vincularLocalizacao(int? idLocalizacao) async {
-    final deviceId = int.tryParse(dotenv['DEVICE_ID'] ?? '1') ?? 1;
+  // O que: define/remover a FK de localizacao do dispositivo.
+  // Como: delega para [DispositivoDao.atualizarLocalizacao].
+  // Por que: mudar a alocacao fisica conforme necessidade.
+  Future<void> vincularLocalizacao({
+    required int idDispositivo,
+    required int? idLocalizacao,
+  }) async {
     await dispositivoDao.atualizarLocalizacao(
-      idDispositivo: deviceId,
+      idDispositivo: idDispositivo,
       idLocalizacao: idLocalizacao,
     );
   }

@@ -1,9 +1,14 @@
 /// ===============================================================
 /// Alerta - Modelo da tabela `alerta`
 ///
-/// Funcao principal:
-/// - Representar uma linha da tabela `alerta` do MySQL.
-/// - Modelo "burro": apenas campos e construtor.
+/// O que faz:
+/// - Representa um alerta gerado quando nivel de gas excede o limiar.
+///
+/// Como faz:
+/// - Modelo "burro": armazena dados para persistencia via DAO.
+///
+/// Por que assim:
+/// - Separar camadas e manter o foco da regra no service.
 ///
 /// Campos:
 /// - id (int?)

@@ -1,9 +1,14 @@
 /// ===============================================================
 /// Localizacao - Modelo da tabela `localizacao`
 ///
-/// Funcao principal:
-/// - Representar uma linha da tabela `localizacao`.
-/// - Modelo "burro": apenas campos e construtor.
+/// O que faz:
+/// - Representa um local fisico cadastrado para alocar dispositivos.
+///
+/// Como faz:
+/// - Modelo "burro": somente campos e construtor.
+///
+/// Por que assim:
+/// - Simples e adequado ao foco didatico do projeto.
 /// ===============================================================
 class Localizacao {
   final int? id;

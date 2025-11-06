@@ -4,13 +4,20 @@ import 'package:leakguard_mq2/services/db_service.dart';
 /// ===============================================================
 /// DispositivoDao - Operacoes de persistencia em `dispositivo`
 ///
-/// O que esta classe faz:
-/// - Recebe um [DbService], que sabe abrir conexoes MySQL.
-/// - Executa INSERT/UPDATE diretamente na tabela `dispositivo`.
-/// - Apoia o [DispositivoService] com metodos especificos (seed, atualizar ativo e fk).
+/// O que faz:
+/// - Garante existencia do dispositivo (seed) e atualiza campos simples.
+/// - Permite vincular/desvincular a localizacao (FK) do dispositivo.
 ///
-/// Observacao:
-/// - No projeto atual ha apenas um dispositivo (ID = 1), entao as consultas usam sempre esse ID.
+/// Como faz:
+/// - Abre conexao via [DbService.openConnection] sob demanda.
+/// - Usa SQL direto com `INSERT ... ON DUPLICATE KEY` para o seed.
+/// - Atualiza `ativo` e `id_localizacao` com `UPDATE` simples.
+///
+/// Por que assim:
+/// - Deixa a camada didatica, previsivel e sem dependencias externas.
+///
+/// Quem usa:
+/// - [DispositivoService] chama os metodos abaixo para manter o estado.
 /// ===============================================================
 class DispositivoDao {
   final DbService dbService;
@@ -19,9 +26,10 @@ class DispositivoDao {
   DispositivoDao(this.dbService);
 
   // === 2. Atualiza campo `ativo` do dispositivo ===
-  //
-  // Reutilizado pelo DispositivoService a cada leitura do Firebase.
-  // Converte bool em inteiro (1/0) para gravar na coluna BOOLEAN do MySQL.
+  // O que: sincroniza o status de atividade informado pelo Firebase.
+  // Como: converte bool em inteiro (1/0) e executa UPDATE.
+  // Por que: refletir no banco o estado operacional do dispositivo.
+  // Quem usa: [DispositivoService.sincronizarAtivo].
   Future<int> atualizarAtivo({required int idDispositivo, required bool ativo}) async {
     final MySqlConnection conn = await dbService.openConnection();
 
@@ -37,10 +45,10 @@ class DispositivoDao {
   }
 
   // === 3. Seed simples do dispositivo (garante que o ID exista) ===
-  //
-  // Usado no startup para inserir o ESP32 se ainda nao existir.
-  // Recebe opcionalmente o ID da localizacao padrao (FK).
-  // Usa ON DUPLICATE KEY para atualizar a FK se o registro ja existir.
+  // O que: cria o dispositivo se nao existir, sem sobrescrever dados existentes.
+  // Como: `INSERT ... ON DUPLICATE KEY UPDATE id = id` (no-op quando existe).
+  // Por que: permitir startup/loop idempotente.
+  // Quem usa: [DispositivoService.seedDispositivo].
   Future<void> seedSeNecessario({
     required int idDispositivo,
     String nomePadrao = 'ESP32 MQ-2',
@@ -55,7 +63,7 @@ class DispositivoDao {
 
       final sql =
           "INSERT INTO dispositivo (id, nome, ativo, id_localizacao) VALUES ($idDispositivo, '${nomeEscapado}', 1, $localizacaoValor) "
-          'ON DUPLICATE KEY UPDATE id_localizacao = $localizacaoValor';
+          'ON DUPLICATE KEY UPDATE id = id';
       await conn.query(sql);
     } finally {
       await conn.close();
@@ -63,9 +71,10 @@ class DispositivoDao {
   }
 
   // === 4. Atualiza localizacao vinculada ao dispositivo ===
-  //
-  // Permite alterar a FK manualmente (menu) ou remover (NULL).
-  // O valor ja chega pronto no service, entao apenas concatena no UPDATE.
+  // O que: define/remover `id_localizacao` do dispositivo.
+  // Como: UPDATE simples, aceitando `NULL` quando idLocalizacao nao informado.
+  // Por que: refletir a alocacao fisica do equipamento.
+  // Quem usa: [DispositivoService.vincularLocalizacao].
   Future<int> atualizarLocalizacao({required int idDispositivo, required int? idLocalizacao}) async {
     final MySqlConnection conn = await dbService.openConnection();
 

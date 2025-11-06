@@ -5,12 +5,17 @@ import 'package:leakguard_mq2/daos/alerta_dao.dart';
 /// ===============================================================
 /// AlertaService - Regras de negocio de alerta
 ///
-/// Funcoes principais:
-/// - Avaliar nivel de gas e registrar alerta quando ultrapassar limiar
-/// - Vincular alerta a uma leitura (id_leitura)
+/// O que faz:
+/// - Avalia a leitura de gas contra um limiar simples e registra alerta.
+/// - Vincula o alerta a uma leitura especifica (`id_leitura`).
 ///
-/// Observacao:
-/// - Limiar simples e fixo para projeto academico.
+/// Como faz:
+/// - Compara `nivelGasPPM` com `limiar`.
+/// - Cria um [Alerta] e chama [AlertaDao.inserir] para persistir.
+///
+/// Por que assim:
+/// - Requisito didatico: gerar alerta quando o nivel superar um valor fixo.
+///   Mantemos o valor no construtor para facilitar ajustes.
 /// ===============================================================
 class AlertaService {
   final AlertaDao alertaDao;
@@ -26,6 +31,9 @@ class AlertaService {
   AlertaService({required this.alertaDao, this.limiar = 200.0});
 
   // === 2. Avalia e registra alerta (se necessario) ===
+  // O que: verifica o nivel da leitura e grava alerta quando >= limiar.
+  // Como: constroi o modelo [Alerta] e delega a [AlertaDao.inserir].
+  // Por que: manter a regra de negocio isolada do DAO e do main.
   Future<int?> avaliarERegistrar({
     required FirebaseLeitura leituraFirebase,
     required int idLeitura,
