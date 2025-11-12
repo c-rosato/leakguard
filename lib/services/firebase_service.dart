@@ -7,19 +7,18 @@ import 'package:leakguard_mq2/models/firebase_leitura.dart';
 /// FirebaseService - Comunicacao com o Realtime Database
 ///
 /// O que faz:
-/// - Consulta o Firebase Realtime Database e entrega [FirebaseLeitura] ao app.
-/// - Fornece leitura unica e uma stream com polling simples.
+/// - Fornece leitura única e stream com polling de dados do sensor.
+/// - Converte respostas JSON em [FirebaseLeitura].
 ///
 /// Como faz:
-/// - Usa `package:http` para GET no endpoint `{baseUrl}{path}.json?auth={token}`.
-/// - Converte JSON em [FirebaseLeitura] via `FirebaseLeitura.fromJson`.
-/// - Na stream, aplica regras para evitar emitir eventos redundantes.
+/// - Realiza GET em `{baseUrl}{path}.json?auth={token}` com `package:http`.
+/// - Na stream, emite na primeira leitura e quando houver transições de
+///   detecção, alteração de `sensorAtivo`, redefinição de detecção ou mudança
+///   de `nivelGasPPM`.
 ///
-/// Por que assim:
-/// - Mantem a aplicacao console sem sockets, com logica clara e didatica.
-///
-/// Quem usa:
-/// - `bin/main.dart` para obter snapshot inicial e consumir a stream de leituras.
+/// Interações:
+/// - Consumido por camadas de orquestração para snapshot e processamento
+///   contínuo.
 /// ===============================================================
 class FirebaseService {
   final String baseUrl;
@@ -30,10 +29,9 @@ class FirebaseService {
     required this.authToken,
   });
 
-  // === 1. Busca o estado atual do sensor uma unica vez ===
-  // O que: retorna a leitura atual (ou null) do caminho informado.
-  // Como: GET simples, parse JSON e factory [FirebaseLeitura.fromJson].
-  // Por que: exibir snapshot inicial e sincronizar status do dispositivo.
+  // === 1. Busca o estado atual do sensor (única leitura) ===
+  // O que: retorna a leitura atual do caminho informado ou null.
+  // Como: GET simples; decodifica JSON em [FirebaseLeitura] quando válido.
   Future<FirebaseLeitura?> getCurrentSensorData({String path = '/mq2'}) async {
     final url = Uri.parse('$baseUrl$path.json?auth=$authToken');
 
@@ -55,12 +53,11 @@ class FirebaseService {
     return null;
   }
 
-  // === 2. Stream com polling continuo (a cada 3 segundos) ===
-  // O que: emite leituras quando houver razao relevante.
-  // Como: GET periodico; emite se detectou gas, mudou `sensorAtivo`,
-  //        houve redefinicao ou e a primeira iteracao.
-  // Por que: reduzir ruido no processamento do `main.dart`.
-  // Quem usa: `bin/main.dart` para alimentar Dispositivo/Leitura/Alerta services.
+  // === 2. Stream com polling contínuo (a cada 3 segundos) ===
+  // O que: emite leituras relevantes para processamento.
+  // Como: GET periódico; avalia condições de emissão (primeira leitura,
+  //       transições e mudanças de nível).
+  // Intervalo: 3 segundos entre requisições.
   Stream<FirebaseLeitura?> listenToSensorData({String path = '/mq2'}) async* {
     final url = Uri.parse('$baseUrl$path.json?auth=$authToken');
 
@@ -77,7 +74,8 @@ class FirebaseService {
           if (data is Map<String, dynamic>) {
             final leituraAtual = FirebaseLeitura.fromJson(data);
 
-            // Condicao: emite quando houver deteccao, mudanca de ativo, reset de deteccao ou primeira leitura
+            // Condicao: emite quando houver deteccao, mudanca de ativo, reset de deteccao,
+            // mudanca do nivel de gas ou na primeira leitura
             final detectouAgora = (ultimaLeitura == null && leituraAtual.gasDetectado) ||
                 (ultimaLeitura != null &&
                     !ultimaLeitura.gasDetectado &&
@@ -87,8 +85,10 @@ class FirebaseService {
             final deteccaoRedefinida = ultimaLeitura != null &&
                 ultimaLeitura.gasDetectado &&
                 !leituraAtual.gasDetectado;
+            final nivelMudou = ultimaLeitura != null &&
+                ultimaLeitura.nivelGasPPM != leituraAtual.nivelGasPPM;
 
-            if (detectouAgora || ativoMudou || deteccaoRedefinida || primeiraIteracao) {
+            if (detectouAgora || ativoMudou || deteccaoRedefinida || nivelMudou || primeiraIteracao) {
               yield leituraAtual;
             }
 
