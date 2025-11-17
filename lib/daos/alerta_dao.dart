@@ -5,20 +5,19 @@ import 'package:leakguard_mq2/models/alerta.dart';
 /// ===============================================================
 /// AlertaDao - Operacoes de persistencia em `alerta`
 ///
-/// O que faz:
-/// - Persiste alertas gerados a partir de leituras acima do limiar.
-/// - Retorna o ID do alerta inserido.
+/// Responsabilidades:
+/// - Inserir registros na tabela `alerta` associados a uma leitura de gás.
+/// - Retornar o ID do alerta gerado para rastreamento posterior.
 ///
-/// Como faz:
-/// - Abre conexao via [DbService.openConnection].
-/// - Executa INSERT direto em `alerta` (sem `dataHora`, que usa CURRENT_TIMESTAMP).
-/// - Recupera o ID por `LAST_INSERT_ID()` com fallback simples.
+/// Implementacao:
+/// - Abre conexoes MySQL sob demanda via [DbService.openConnection].
+/// - Executa `INSERT` direto em `alerta`, delegando `dataHora` ao
+///   `CURRENT_TIMESTAMP` do banco.
+/// - Recupera o ID gerado com `LAST_INSERT_ID()` e fallback por SELECT.
 ///
-/// Por que assim:
-/// - Mantem a camada de acesso a dados simples e didatica, sem frameworks.
-///
-/// Quem usa:
-/// - [AlertaService.avaliarERegistrar] constroi o modelo e chama [inserir].
+/// Uso:
+/// - Consumido por [AlertaService] para registrar alertas derivados
+///   de leituras que ultrapassam faixas de segurança.
 /// ===============================================================
 class AlertaDao {
   final DbService dbService;
@@ -51,6 +50,13 @@ class AlertaDao {
   }
 
   // === 3. Obtem o ultimo ID gerado (com fallback) ===
+  // O que: descobre o ultimo ID inserido para a tabela informada.
+  // Como:
+  //   - Primeiro consulta `LAST_INSERT_ID()` na conexao atual.
+  //   - Se o valor for 0 ou invalido, busca o maior `id` da tabela
+  //     com um SELECT ordenado em ordem decrescente.
+  // Por que: garantir que um ID valido seja retornado mesmo em cenarios
+  //          onde `LAST_INSERT_ID()` nao esteja disponivel.
   Future<int> _obterUltimoId(MySqlConnection conn, {required String tabela}) async {
     final lastInsert = await conn.query('SELECT LAST_INSERT_ID()');
     final idDireto = _extrairId(lastInsert);
@@ -64,6 +70,13 @@ class AlertaDao {
     return _extrairId(fallback);
   }
 
+  // === 4. Converte o resultado em inteiro ===
+  // O que: extrai um valor numerico da primeira coluna do primeiro registro.
+  // Como:
+  //   - Verifica o tipo efetivo retornado (`int`, `num` ou outro).
+  //   - Converte para `int`, tentando parse de string quando necessario.
+  // Por que: padronizar a conversao de IDs retornados pelo driver `mysql1`
+  //          e evitar repeticao dessa logica em varios pontos.
   int _extrairId(Results results) {
     if (results.isEmpty) {
       return 0;

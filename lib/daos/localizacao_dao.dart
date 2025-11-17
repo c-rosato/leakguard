@@ -5,53 +5,59 @@ import 'package:leakguard_mq2/models/localizacao.dart';
 /// ===============================================================
 /// LocalizacaoDao - Operacoes de persistencia em `localizacao`
 ///
-/// O que faz:
-/// - Lista, cria e garante a existência de uma localização padrão.
+/// Responsabilidades:
+/// - Listar localizacoes cadastradas para exibição ou validação.
+/// - Inserir novas localizacoes na tabela `localizacao`.
+/// - Garantir a existência de uma localizacao padrão com ID conhecido.
 ///
-/// Como faz:
-/// - Abre conexões sob demanda via [DbService.openConnection].
-/// - Executa INSERT simples (com escape básico) e seed idempotente com
-///   `INSERT ... ON DUPLICATE KEY`.
-/// - Recupera IDs com `LAST_INSERT_ID()` e possui fallback por consulta.
+/// Implementacao:
+/// - Abre conexoes MySQL sob demanda via [DbService.openConnection].
+/// - Utiliza SELECT simples para carregar id, nome e descricao.
+/// - Usa `INSERT` e `INSERT ... ON DUPLICATE KEY` para criar registros,
+///   com recuperação do último ID por `LAST_INSERT_ID()` e fallback.
 ///
-/// Quem usa:
-/// - [LocalizacaoService] delega criação e seed para este DAO.
+/// Uso:
+/// - Consumido por [LocalizacaoService] para operações de cadastro,
+///   listagem e seed da localização padrão.
 /// ===============================================================
 class LocalizacaoDao {
   final DbService dbService;
 
-  // === 1. Construtor ===
-  //
-  // O DbService é injetado externamente. Mantém a referência para abrir
-  // conexões sempre que uma operação for executada.
   LocalizacaoDao(this.dbService);
 
-  // === 1.1. Lista todas as localizações ordenadas pelo nome ===
-  // O que: retorna todas as localizações existentes.
-  // Como: SELECT simples mapeando linhas para o modelo [Localizacao].
+  // === 1. Lista todas as localizacoes ===
+  // O que: retorna todas as linhas da tabela `localizacao`.
+  // Como: executa SELECT simples trazendo id, nome_local e descricao,
+  //       ordenado pelo ID.
+  // Por que: disponibilizar dados para consultas e exibicao nos menus.
   Future<List<Localizacao>> listarTodas() async {
     final conn = await dbService.openConnection();
 
     try {
       final results = await conn.query(
-        'SELECT id, nome_local, descricao FROM localizacao ORDER BY nome_local',
+        'SELECT id, nome_local, descricao FROM localizacao ORDER BY id',
       );
 
-      return results
-          .map((row) => Localizacao(
-                id: row['id'] as int?,
-                nomeLocal: row['nome_local'] as String,
-                descricao: row['descricao'] as String?,
-              ))
-          .toList();
+      return results.map((row) {
+        final id = row[0] as int;
+        final nome = row[1] as String;
+        final desc = row[2] as String?;
+
+        return Localizacao(
+          id: id,
+          nomeLocal: nome,
+          descricao: desc,
+        );
+      }).toList();
     } finally {
       await conn.close();
     }
   }
 
-  // === 2. Insere localizacao e retorna o ID ===
-  // O que: cria um novo registro em `localizacao` e retorna o ID gerado.
-  // Como: abre conexão (DbService), escapa campos e executa INSERT.
+  // === 2. Insere uma nova localizacao ===
+  // O que: cria um registro na tabela `localizacao` com nome e descricao.
+  // Como: abre conexao, escapa os textos e executa INSERT.
+  // Por que: permitir cadastro de novos ambientes pelo administrador.
   Future<int> inserir(Localizacao localizacao) async {
     final conn = await dbService.openConnection();
 
@@ -71,10 +77,10 @@ class LocalizacaoDao {
     }
   }
 
-  // === 3. Seed padrão com ID conhecido ===
-  // O que: cria/atualiza a localização padrão com ID estável (ex.: 1).
-  // Como: `INSERT ... ON DUPLICATE KEY UPDATE` para garantir idempotência.
-  // Quem usa: [LocalizacaoService.seedLocalizacaoPadrao].
+  // === 3. Garante a localizacao padrao ===
+  // O que: cria ou atualiza uma localizacao com ID fixo (por exemplo, 1).
+  // Como: usa `INSERT ... ON DUPLICATE KEY UPDATE` para manter nome e descricao.
+  // Por que: assegurar uma FK estavel utilizada como base por outros registros.
   Future<int> seedPadrao({
     required int idLocalizacao,
     required String nomePadrao,
@@ -100,10 +106,10 @@ class LocalizacaoDao {
     }
   }
 
-  // === 4. Recupera o último ID gerado ===
-  //
-  // Usa LAST_INSERT_ID() na mesma conexão. Caso retorne zero, realiza um
-  // SELECT para obter o maior ID existente.
+  // === 4. Recupera o ultimo ID gerado ===
+  // O que: determina o ultimo ID inserido em `localizacao`.
+  // Como: consulta `LAST_INSERT_ID()` e, se necessario, busca o maior ID.
+  // Por que: devolver ao chamador o identificador da localizacao criada.
   Future<int> _obterUltimoId(MySqlConnection conn) async {
     final lastInsert = await conn.query('SELECT LAST_INSERT_ID()');
     final idDireto = _extrairId(lastInsert);
@@ -117,10 +123,10 @@ class LocalizacaoDao {
     return _extrairId(fallback);
   }
 
-  // === 5. Converte o valor retornado pelo MySQL em int ===
-  //
-  // O pacote mysql1 pode retornar int, num ou string. Centraliza a
-  // conversão para reutilização em diferentes consultas.
+  // === 5. Converte o valor retornado em inteiro ===
+  // O que: extrai o valor numerico da primeira coluna do primeiro registro.
+  // Como: trata os possiveis tipos retornados (`int`, `num` ou `String`).
+  // Por que: padronizar a conversao de IDs vindos do MySQL.
   int _extrairId(Results results) {
     if (results.isEmpty) {
       return 0;

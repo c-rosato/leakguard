@@ -4,14 +4,16 @@ import 'package:leakguard_mq2/models/firebase_leitura.dart';
 /// ===============================================================
 /// DispositivoService - Regras simples do dispositivo
 ///
-/// O que faz:
-/// - Garante existencia do dispositivo, sincroniza `ativo` e gerencia a FK de localizacao.
+/// Responsabilidades:
+/// - Garantir que dispositivos informados pelo sensor existam na tabela
+///   `dispositivo` (seed).
+/// - Sincronizar o campo `ativo` conforme o status recebido do Firebase.
+/// - Vincular ou alterar a localizacao associada ao dispositivo.
+/// - Criar novos dispositivos a partir de acoes administrativas.
 ///
-/// Como faz:
-/// - Encapsula chamadas ao [DispositivoDao] para seed, update de `ativo` e `id_localizacao`.
-///
-/// Por que assim:
-/// - Centraliza regras simples, deixa o DAO focado no SQL e o `main.dart` limpo.
+/// Implementacao:
+/// - Encapsula chamadas ao [DispositivoDao] para seed, atualizacao de
+///   `ativo`, manutencao de `id_localizacao` e insercao de novos registros.
 /// ===============================================================
 class DispositivoService {
   final DispositivoDao dispositivoDao;
@@ -59,6 +61,17 @@ class DispositivoService {
   }) async {
     await dispositivoDao.atualizarLocalizacao(
       idDispositivo: idDispositivo,
+      idLocalizacao: idLocalizacao,
+    );
+  }
+
+  // === 6. Cria um novo dispositivo (acao administrativa) ===
+  Future<int> criarNovoDispositivo({
+    required String nome,
+    required int idLocalizacao,
+  }) async {
+    return await dispositivoDao.inserirNovo(
+      nome: nome,
       idLocalizacao: idLocalizacao,
     );
   }

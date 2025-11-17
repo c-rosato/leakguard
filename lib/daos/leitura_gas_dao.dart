@@ -6,55 +6,55 @@ import 'package:leakguard_mq2/models/leitura_gas.dart';
 /// ===============================================================
 /// LeituraGasDao - Operacoes de persistencia em `leituragas`
 ///
-/// O que faz:
-/// - Persiste leituras de gas na tabela `leituragas`.
-/// - Fornece utilitario para descobrir a localizacao atual de um dispositivo.
+/// Responsabilidades:
+/// - Inserir leituras de gás na tabela `leituragas` com todos os campos
+///   necessários para auditoria.
+/// - Descobrir a localização atual de um dispositivo a partir da tabela
+///   `dispositivo`.
 ///
-/// Como faz:
-/// - Abre conexoes sob demanda via [DbService.openConnection].
-/// - No `inserir`, preenche `id_localizacao` de forma robusta usando o valor
-///   do modelo, ou um subselect em `dispositivo.id_localizacao` com fallback
-///   para `1` (localizacao padrao garantida pelo seed).
+/// Implementacao:
+/// - Abre conexoes MySQL sob demanda via [DbService.openConnection].
+/// - Ao inserir, utiliza a localizacao presente no modelo ou, se ausente,
+///   faz um subselect em `dispositivo.id_localizacao` com fallback para 1
+///   (localizacao padrao).
+/// - Converte datas e tipos primitivos para representar fielmente o registro
+///   no banco.
+/// - Recupera o ID gerado com `LAST_INSERT_ID()` e fallback por SELECT.
 ///
-/// Por que assim:
-/// - Mantemos a "fotografia" da localizacao no momento da leitura para
-///   preservar historico, mesmo que o dispositivo mude de lugar depois.
-/// - O subselect evita problemas de timing entre camadas e garante FK sempre.
-///
-/// Quem usa:
-/// - [LeituraService.processarLeitura] cria o modelo e chama [inserir] para
-///   gravar a leitura. Pode tambem usar [obterLocalizacaoDoDispositivo] para
-///   compor o modelo antes do insert.
+/// Uso:
+/// - Consumido por [LeituraService] para persistir leituras convertidas
+///   a partir dos dados do Firebase.
 /// ===============================================================
 class LeituraGasDao {
   final DbService dbService;
 
   // === 1. Construtor ===
-  // Guarda o DbService para reutilizar a mesma configuracao de conexao.
+  // Mantem a referencia de [DbService] para abrir conexoes sempre que necessario.
   LeituraGasDao(this.dbService);
 
   // === 2. Insere leitura e retorna o ID gerado ===
   //
-  // Passos:
+  // Fluxo:
   // 1. Abre conexao MySQL.
-  // 2. Formata data/hora e converte bool em inteiro.
-  // 3. Executa INSERT na tabela `leituragas`, incluindo `id_localizacao`.
-  // 4. Busca o ultimo ID usando `_obterUltimoId`.
+  // 2. Formata data/hora e converte `foiDetectado` para inteiro (1/0).
+  // 3. Monta o valor de `id_localizacao` com base no modelo ou em subselect.
+  // 4. Executa INSERT em `leituragas` e retorna o ID criado.
   Future<int> inserir(LeituraGas leitura) async {
     final MySqlConnection conn = await dbService.openConnection();
 
     try {
-      // O que: prepara campos para INSERT.
-      // Como: formata data, converte bool e monta SQL do id_localizacao.
-      // Por que: manter SQL claro e lidar com tipos/NULL de forma simples.
+      // Preparo dos campos para INSERT:
+      // - Formata a data da leitura.
+      // - Converte o flag booleano para inteiro.
+      // - Define o SQL que resolve a localizacao da leitura.
       final dataFmt = DateFormat('yyyy-MM-dd HH:mm:ss').format(leitura.dataHora);
       final foiInt = leitura.foiDetectado ? 1 : 0;
       final nivel = leitura.nivelGas;
       final idDisp = leitura.idDispositivo;
-      // Preenche id_localizacao de forma robusta:
-      // - Se veio no modelo, usa diretamente.
-      // - Se nao veio, busca no proprio MySQL a localizacao atual do dispositivo
-      //   e aplica fallback para 1 (localizacao padrao semeada).
+      // Resolucao de id_localizacao:
+      // - Se fornecido no modelo, utiliza o valor diretamente.
+      // - Caso contrario, utiliza a localizacao atual do dispositivo no banco,
+      //   com fallback para a localizacao padrao (1).
       final idLocalizacaoSql = leitura.idLocalizacao == null
           ? "COALESCE((SELECT id_localizacao FROM dispositivo WHERE id = $idDisp), 1)"
           : leitura.idLocalizacao.toString();
@@ -131,4 +131,5 @@ class LeituraGasDao {
       await conn.close();
     }
   }
+
 }

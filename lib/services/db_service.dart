@@ -4,17 +4,18 @@ import 'package:mysql1/mysql1.dart';
 /// ===============================================================
 /// DbService - Conexao simples com MySQL
 ///
-/// O que faz:
-/// - Le configuracoes do arquivo `.env` e abre conexoes MySQL sob demanda.
+/// Responsabilidades:
+/// - Ler configuracoes de conexao a partir do arquivo `.env`.
+/// - Fornecer instancias de [MySqlConnection] sob demanda para os DAOs.
 ///
-/// Como faz:
-/// - Usa `mysql1` com `ConnectionSettings` e `MySqlConnection.connect`.
+/// Implementacao:
+/// - Usa `mysql1` com [ConnectionSettings] preenchido a partir das
+///   variaveis de ambiente.
+/// - Nao mantem pool de conexoes; cada chamada a [openConnection]
+///   abre uma nova conexao.
 ///
-/// Por que assim:
-/// - Evita pool e complexidade; cada DAO abre/fecha a sua conexao.
-///
-/// Quem usa:
-/// - Todos os DAOs chamam [openConnection] antes de executar SQL.
+/// Uso:
+/// - Todos os DAOs invocam [openConnection] antes de executar comandos SQL.
 /// ===============================================================
 class DbService {
   final DotEnv dotenv;
@@ -44,4 +45,3 @@ class DbService {
     return await MySqlConnection.connect(settings);
   }
 }
-

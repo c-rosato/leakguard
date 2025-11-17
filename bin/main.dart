@@ -15,25 +15,31 @@ import 'package:leakguard_mq2/daos/localizacao_dao.dart';
 import 'package:leakguard_mq2/views/console_view.dart';
 import 'package:leakguard_mq2/controllers/sensor_controller.dart';
 import 'package:leakguard_mq2/controllers/input_controller.dart';
+import 'package:leakguard_mq2/daos/usuario_dao.dart';
+import 'package:leakguard_mq2/daos/historico_uso_dao.dart';
+import 'package:leakguard_mq2/services/usuario_service.dart';
+import 'package:leakguard_mq2/services/historico_uso_service.dart';
+import 'package:leakguard_mq2/daos/menu_read_dao.dart';
 
 /// ===============================================================
 /// LeakGuard Console - MQ-2
 ///
-/// Resumo do fluxo:
-/// 1) Carrega .env e autentica no Firebase.
-/// 2) Instancia DB, DAOs e Services.
-/// 3) Semeia localizacao padrao (FK base).
-/// 4) Snapshot inicial do Firebase (estado atual).
-/// 5) Polling continuo (3s) e processamento: sincroniza `ativo`,
-///    persiste em transicao `false -> true` e avalia alerta.
-/// 6) Entrada do usuario: `menu` e `sair`.
+/// Visão geral do fluxo:
+/// 1) Carrega o arquivo `.env` e obtém um `idToken` anônimo no Firebase.
+/// 2) Cria `DbService`, DAOs e Services que acessam MySQL e Firebase.
+/// 3) Garante a existência de uma localização padrão utilizada como FK.
+/// 4) Executa um snapshot inicial do estado atual do sensor no Firebase.
+/// 5) Inicia o polling contínuo (3s) que sincroniza `ativo`, grava leituras
+///    relevantes e gera alertas.
+/// 6) Abre o canal de entrada do usuário (`menu` / `sair`), integrando o
+///    menu de console sem interromper o polling.
 ///
-/// Nota: Snapshot e polling foram delegados ao SensorController
+/// A orquestração do snapshot e do polling é feita pelo [SensorController].
 /// ===============================================================
 /// main - ponto de entrada
-/// - Inicializa configuracoes e dependencias.
-/// - Semeia localizacao padrao e delega snapshot/polling ao controller.
-/// - Mantem o console rodando ate `sair`.
+/// - Configura variáveis de ambiente, autenticação Firebase e serviços.
+/// - Semeia localização padrão e inicia snapshot/polling do sensor.
+/// - Mantém o processo ativo enquanto o usuário não encerrar o console.
 void main() async {
   // === 1. Carrega variaveis de ambiente (.env) ===
   // Torna chaves acessiveis via `dotenv['CHAVE']`.
@@ -66,6 +72,8 @@ void main() async {
   final alertaDao = AlertaDao(dbService);
   final dispositivoDao = DispositivoDao(dbService);
   final localizacaoDao = LocalizacaoDao(dbService);
+  final usuarioDao = UsuarioDao(dbService);
+  final historicoUsoDao = HistoricoUsoDao(dbService);
 
   final leituraService = LeituraService(
     leituraGasDao: leituraGasDao,
@@ -77,12 +85,32 @@ void main() async {
   final localizacaoService = LocalizacaoService(
     localizacaoDao: localizacaoDao,
   );
+  final usuarioService = UsuarioService(usuarioDao: usuarioDao);
+  final historicoUsoService =
+      HistoricoUsoService(historicoUsoDao: historicoUsoDao);
+
+  // Garante usuarios basicos para o historico de uso
+  await usuarioService.seedUsuariosPadrao(dotenv);
+
+  // === Conexao exclusiva para o menu (VIEW) ===
+  // Estilo do exemplo mysql_case: uma conexao unica reaproveitada
+  // apenas para SELECTs do menu.
+  final menuConnection = await dbService.openConnection();
+  final menuReadDao = MenuReadDao(menuConnection);
 
   // === VIEW (menu de console) - estrutura nao bloqueante ===
   // O que: menu acionado pelo usuario via stdin ('menu'), sem interromper polling.
   // Como: maquina de estados consumindo mesmas linhas do stdin, sem bloquear thread.
   // Por que: preparar integracao gradual do VIEW (login/listagens) sem quebrar fluxo.
-  final consoleView = ConsoleView(dotenv);
+  final consoleView = ConsoleView(
+    dotenv: dotenv,
+    dispositivoService: dispositivoService,
+    localizacaoService: localizacaoService,
+    leituraService: leituraService,
+    alertaService: alertaService,
+    historicoUsoService: historicoUsoService,
+    menuReadDao: menuReadDao,
+  );
 
   // === Seed de localizacao padrao ===
   // O que: garantir localizacao ID=1 disponivel para FKs.

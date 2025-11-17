@@ -4,20 +4,22 @@ import 'package:leakguard_mq2/services/db_service.dart';
 /// ===============================================================
 /// DispositivoDao - Operacoes de persistencia em `dispositivo`
 ///
-/// O que faz:
-/// - Garante existencia do dispositivo (seed) e atualiza campos simples.
-/// - Permite vincular/desvincular a localizacao (FK) do dispositivo.
+/// Responsabilidades:
+/// - Garantir que o registro de um dispositivo exista (seed por ID).
+/// - Atualizar campos simples (`ativo`, `id_localizacao`) do dispositivo.
+/// - Criar novos dispositivos com ID auto-incremento para uso administrativo.
 ///
-/// Como faz:
-/// - Abre conexao via [DbService.openConnection] sob demanda.
-/// - Usa SQL direto com `INSERT ... ON DUPLICATE KEY` para o seed.
-/// - Atualiza `ativo` e `id_localizacao` com `UPDATE` simples.
+/// Implementacao:
+/// - Abre conexoes MySQL via [DbService.openConnection] para cada operacao.
+/// - Usa `INSERT ... ON DUPLICATE KEY` para criar o dispositivo apenas
+///   quando nao existir.
+/// - Executa `UPDATE` para sincronizar o estado `ativo` e a FK de localizacao.
+/// - Para inserts administrativos, utiliza `INSERT` com auto-incremento e
+///   recupera o ID por `insertId` ou `LAST_INSERT_ID()` com fallback.
 ///
-/// Por que assim:
-/// - Deixa a camada didatica, previsivel e sem dependencias externas.
-///
-/// Quem usa:
-/// - [DispositivoService] chama os metodos abaixo para manter o estado.
+/// Uso:
+/// - Consumido por [DispositivoService] para manter o cadastro de
+///   dispositivos alinhado ao estado do sensor e aos comandos do administrador.
 /// ===============================================================
 class DispositivoDao {
   final DbService dbService;
@@ -85,6 +87,91 @@ class DispositivoDao {
       );
 
       return result.affectedRows ?? 0;
+    } finally {
+      await conn.close();
+    }
+  }
+
+  // === 5. Lista todos os dispositivos ===
+  Future<List<Map<String, dynamic>>> listarTodos() async {
+    final MySqlConnection conn = await dbService.openConnection();
+
+    try {
+      final results = await conn.query(
+        'SELECT id, nome, ativo, id_localizacao FROM dispositivo ORDER BY id',
+      );
+
+      return results.map((row) {
+        final id = row[0] as int;
+        final nome = row[1] as String;
+        final ativoValor = row[2];
+        final idLoc = row[3] as int?;
+
+        final bool ativoBool;
+        if (ativoValor is bool) {
+          ativoBool = ativoValor;
+        } else if (ativoValor is num) {
+          ativoBool = ativoValor != 0;
+        } else {
+          ativoBool = ativoValor.toString() != '0';
+        }
+        
+        return <String, dynamic>{
+          'id': id,
+          'nome': nome,
+          'ativo': ativoBool,
+          'id_localizacao': idLoc,
+        };
+      }).toList();
+    } finally {
+      await conn.close();
+    }
+  }
+
+  // === 6. Cria um novo dispositivo (AUTO_INCREMENT) ===
+  Future<int> inserirNovo({
+    required String nome,
+    required int idLocalizacao,
+  }) async {
+    final MySqlConnection conn = await dbService.openConnection();
+
+    try {
+      final nomeEscapado = nome.replaceAll("'", "''");
+
+      final result = await conn.query(
+        "INSERT INTO dispositivo (nome, ativo, id_localizacao) "
+        "VALUES ('$nomeEscapado', 1, $idLocalizacao)",
+      );
+
+      // mysql1 expõe o ID gerado em `insertId`
+      final insertId = result.insertId;
+      if (insertId != null && insertId > 0) {
+        return insertId;
+      }
+
+      // Fallback usando LAST_INSERT_ID()
+      final results = await conn.query('SELECT LAST_INSERT_ID()');
+      if (results.isNotEmpty) {
+        final value = results.first[0];
+        if (value is int && value > 0) return value;
+        if (value is num && value.toInt() > 0) return value.toInt();
+        final parsed = int.tryParse(value.toString());
+        if (parsed != null && parsed > 0) return parsed;
+      }
+
+      // Fallback final: busca pelo ultimo ID com o mesmo nome
+      final idResult = await conn.query(
+        "SELECT id FROM dispositivo WHERE nome = '$nomeEscapado' "
+        'ORDER BY id DESC LIMIT 1',
+      );
+      if (idResult.isNotEmpty) {
+        final value = idResult.first[0];
+        if (value is int) return value;
+        if (value is num) return value.toInt();
+        return int.tryParse(value.toString()) ?? 0;
+      }
+
+      return 0;
     } finally {
       await conn.close();
     }

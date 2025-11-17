@@ -5,22 +5,17 @@ import 'package:leakguard_mq2/daos/leitura_gas_dao.dart';
 /// ===============================================================
 /// LeituraService - Regras de negocio da leitura
 ///
-/// O que faz:
-/// - Converte [FirebaseLeitura] (vinda do Firebase) em [LeituraGas] (modelo MySQL).
-/// - Garante que `id_localizacao` seja atribuido com a localizacao vigente.
-/// - Persiste a leitura e devolve o ID gerado.
+/// Responsabilidades:
+/// - Converter leituras recebidas do Firebase ([FirebaseLeitura]) para o
+///   modelo de persistencia [LeituraGas].
+/// - Resolver e associar a localizacao vigente do dispositivo a cada leitura.
+/// - Persistir a leitura em `leituragas` e devolver o ID gerado.
 ///
-/// Como faz:
+/// Implementacao:
 /// - Consulta a localizacao atual do dispositivo via
 ///   [LeituraGasDao.obterLocalizacaoDoDispositivo].
-/// - Monta um [LeituraGas] com data/hora local (simples para didatica).
-/// - Chama [LeituraGasDao.inserir] para gravar; o DAO ainda possui fallback
-///   por subselect, tornando a gravacao robusta.
-///
-/// Por que assim:
-/// - Mantem o historico correto da localizacao no momento da leitura.
-/// - Segue a regra do professor: gravar apenas quando `false -> true` (controlado
-///   pelo `main.dart` antes de chamar este service).
+/// - Monta um [LeituraGas] com data/hora local do console.
+/// - Chama [LeituraGasDao.inserir] para gravar a leitura no MySQL.
 /// ===============================================================
 class LeituraService {
   final LeituraGasDao leituraGasDao;

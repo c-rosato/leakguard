@@ -103,29 +103,27 @@ class SensorController {
             return; // ignora primeiro evento apenas para inicializar estado
           }
 
-          final detectouAgora = !_ultimaLeituraProcessada!.gasDetectado &&
-              leitura.gasDetectado;
+          // Regra 1: leituras comuns só quando o nível muda
           final nivelMudou = _ultimaLeituraProcessada!.nivelGasPPM !=
               leitura.nivelGasPPM;
 
           int? leituraId;
-          if (nivelMudou || detectouAgora) {
-            // Persiste variacoes de nivel (tempo quasi-real) sem prints
+          if (nivelMudou) {
             leituraId = await leituraService.processarLeitura(leitura);
           }
 
-          if (detectouAgora) {
-            // Gera e imprime somente alertas, nao todas as leituras
-            final tipo = await alertaService.avaliarERegistrarPorDeteccao(
-              leituraFirebase: leitura,
-              idLeitura: leituraId ?? await leituraService.processarLeitura(leitura),
-            );
-            if (tipo != null) {
-              print('Alerta $tipo: $leitura');
-            }
+          // Regra 2: alerta depende apenas do valor do nível de gás
+          final tipo = await alertaService.avaliarERegistrarPorDeteccao(
+            leituraFirebase: leitura,
+            // se ainda nao gravou a leitura nesta iteracao, grava aqui para ter o id
+            idLeitura: leituraId ?? await leituraService.processarLeitura(leitura),
+          );
+          if (tipo != null) {
+            print('Alerta $tipo: $leitura');
           }
 
           _ultimaLeituraProcessada = leitura;
+
         } catch (e) {
           print('Erro ao processar leitura e regras: $e');
         }
