@@ -35,14 +35,14 @@ class AlertaService {
     String? tipo;
 
     if (nivel > 25 && nivel < 30) {
-      tipo = 'moderado';
+      tipo = 'MODERADO ⚠️';
     } else if (nivel > 30) {
-      tipo = 'critico';
+      tipo = 'CRITICO 🚨';
     }
 
     if (tipo != null) {
       final mensagem =
-          'Alerta $tipo: nivel de gas ${nivel.toStringAsFixed(2)} ppm';
+          'ALERTA $tipo: NIVEL ${nivel.toStringAsFixed(2)} ppm';
       final alerta = Alerta(
         idLeitura: idLeitura,
         mensagem: mensagem,
