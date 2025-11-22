@@ -24,7 +24,7 @@ class AlertaService {
   // O que: utilizado quando `gasDetectado` passa de false para true.
   // Como: define o tipo com base em `nivelGasPPM` e registra o alerta com
   //       mensagem especifica.
-  //       - > 20 e < 30 => "Alerta moderado"
+  //       - > 25 e < 30 => "Alerta moderado"
   //       - > 30        => "Alerta critico"
   // Retorno: tipo do alerta ("moderado"/"critico") quando criado; null caso contrario.
   Future<String?> avaliarERegistrarPorDeteccao({
@@ -34,7 +34,7 @@ class AlertaService {
     final nivel = leituraFirebase.nivelGasPPM;
     String? tipo;
 
-    if (nivel > 20 && nivel < 30) {
+    if (nivel > 25 && nivel < 30) {
       tipo = 'moderado';
     } else if (nivel > 30) {
       tipo = 'critico';
