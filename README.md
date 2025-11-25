@@ -35,9 +35,10 @@ Monitoramento de gás com ESP32 + MQ-2 -> Firebase -> app console Dart (SDK 3.9.
 ## Como usar
 1) Pré-requisitos: Dart SDK 3.9.2, MySQL ativo (banco criado), Firebase Realtime Database configurado.
 2) Configure `.env` com base do Firebase, API key, credenciais MySQL, logins admin/usuário.
-3) Instale dependências: `dart pub get`.
-4) Rode: `dart run bin/main.dart`.
-5) Em execução: acompanhe logs; `menu` para listar/criar; `sair` para encerrar.
+3) Crie o banco de dados MySQL com o seguinte script: https://justpaste.it/lvziw
+4) Instale dependências: `dart pub get`.
+5) Rode: `dart run bin/main.dart`.
+6) Em execução: acompanhe logs; `menu` para listar/criar; `sair` para encerrar.
 
 ## Bibliotecas (pubspec)
 - http (REST Firebase)
@@ -52,4 +53,5 @@ Monitoramento de gás com ESP32 + MQ-2 -> Firebase -> app console Dart (SDK 3.9.
 - MySQL  
 - Power BI  
 
+LINK DO POWERBI SERVICE COM MODELO DO DASHBOARD: https://bit.ly/leakguardbi
 Autores: [Cauã Micael Rosato, Eduardo Baldo, Matheus Gabriel De Melo Tesch, Thiago Mafra Domingues]
