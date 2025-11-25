@@ -53,5 +53,6 @@ Monitoramento de gás com ESP32 + MQ-2 -> Firebase -> app console Dart (SDK 3.9.
 - MySQL  
 - Power BI  
 
-LINK DO POWERBI SERVICE COM MODELO DO DASHBOARD: https://bit.ly/leakguardbi
-Autores: [Cauã Micael Rosato, Eduardo Baldo, Matheus Gabriel De Melo Tesch, Thiago Mafra Domingues]
+- LINK DO POWERBI SERVICE COM MODELO DO DASHBOARD: https://bit.ly/leakguardbi
+
+- Autores: [Cauã Micael Rosato, Eduardo Baldo, Matheus Gabriel De Melo Tesch, Thiago Mafra Domingues]
